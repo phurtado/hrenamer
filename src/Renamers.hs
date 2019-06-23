@@ -12,6 +12,8 @@ import qualified Data.Text.IO as TIO
 
 import Util
 
+data PathWithIndex = PathWithIndex {path :: FilePath, index :: Int}
+
 -- |Main renamer
 renameFromFolderName :: FilePath -> Int -> IO ()
 renameFromFolderName fldr start = do
@@ -28,14 +30,17 @@ renameFromFolderName fldr start = do
 
         {- Fold function that checks if the name without extension is already used to 
            keep files with the same name and different extension with the same root -}
-        let fldFn :: [(FilePath, FilePath)] -> (FilePath, Int) -> [(FilePath, FilePath)]
-            fldFn acc x = case lookup (dropExtension $ fst x) (map (\y -> (dropExtension (fst y), snd y)) acc) of
-                            Just p -> (fst x, (dropExtension p) <.> (maybe "" id (extension (fst x)))) : acc
-                            Nothing -> (newName x) : acc
+        let fldFn :: [(FilePath, PathWithIndex)] -> FilePath -> [(FilePath, PathWithIndex)]
+            fldFn acc x = case lookup (dropExtension x) (map (\y -> (dropExtension (fst y), snd y)) acc) of
+                            Just p -> (x, PathWithIndex {path=(dropExtension $ path p) <.> (maybe "" id (extension x)), index=index p}) : acc
+                            Nothing -> let nidx = 1 + (index $ snd $ head acc)
+                                           (old, new) = newName (x, nidx)
+                                       in (old, PathWithIndex {path=new, index=nidx}) : acc
 
-        files <- (sort $ ls $ fldr) 
-                    >>= return . (flip zip) [start..] 
-                    >>= return . reverse . foldl fldFn []
+        files <- (sort $ ls $ fldr)
+                    >>= return . reverse . foldl fldFn [("", PathWithIndex {path="", index=0})]
+                    >>= return . tail
+                    >>= return . map (\(p, pwi) -> (p, path pwi))
 
         mapM_ (\(o, n) -> 
                     cp o n 
